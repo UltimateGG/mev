@@ -42,13 +42,10 @@ const decodeUniversalRouterSwap = input => {
     const breakdown = input.substring(2).match(/.{1,64}/g); // TODO maybe faster way without regex?
 
     let path = [];
-    let hasTwoPath = true;
     if (breakdown.length != 9) {
         const pathOne = '0x' + breakdown[breakdown.length - 2].substring(24);
         const pathTwo = '0x' + breakdown[breakdown.length - 1].substring(24);
         path = [pathOne, pathTwo];
-    } else {
-        hasTwoPath = false;
     }
 
     return {
@@ -56,7 +53,6 @@ const decodeUniversalRouterSwap = input => {
         amountIn: decodedParameters[1],
         minAmountOut: decodedParameters[2], // basically slippage
         path,
-        hasTwoPath,
     };
 }
 
@@ -72,7 +68,7 @@ const initialChecks = async tx => {
     }
 
     if (!transaction || !transaction.to || Number(transaction.value) == 0) return false;
-    if (transaction.to.toLowerCase() != config.universalRouter.toLowerCase()) return false;
+    if (transaction.to.toLowerCase() !== config.universalRouter.toLowerCase()) return false;
 
     try {
         decoded = universalRouterInterface.parseTransaction(transaction);
@@ -82,12 +78,17 @@ const initialChecks = async tx => {
 
     // If the swap is not for uniswapV2 we return it  // TODO support v3? 0x00 0x01 0x09 
     if (!decoded.args.commands.includes('08')) return false;
-    let swapPositionInCommands = decoded.args.commands.substring(2).indexOf('08') / 2;
-    let inputPosition = decoded.args.inputs[swapPositionInCommands];
 
-    let decodedSwap = decodeUniversalRouterSwap(inputPosition);
-    if (!decodedSwap.hasTwoPath || decodedSwap.recipient === 2) return false; // TODO figure out what recipient 2 is
-    if (decodedSwap.path[0].toLowerCase() != wethAddress.toLowerCase()) return false;
+    let swapPositionInCommands = decoded.args.commands.substring(2).indexOf('08') / 2;
+    const decodedSwap = decodeUniversalRouterSwap(decoded.args.inputs[swapPositionInCommands]);
+
+    // Recipient 2 is a flag for ADDRESS_THIS (the router itself) 1 is MSG_SENDER (the caller)
+    // https://github.com/Uniswap/universal-router/blob/85669462f337bbe751313fc4ccb316f9bb7967c0/contracts/libraries/Recipient.sol
+    if (decodedSwap.recipient === 2) return false;
+
+    // Only support (w)ETH -> TOKEN swaps for now
+    if (decodedSwap.path.length != 2) return false;
+    if (decodedSwap.path[0].toLowerCase() !== wethAddress.toLowerCase()) return false;
 
     return {
         transaction,
@@ -138,7 +139,7 @@ const processTransaction = async tx => {
     // 7. Buy using your amount in and calculate amount out
     let firstAmountOut = await uniswapRouter.getAmountOut(buyAmount, a, b);
     const updatedReserveA = a.add(buyAmount);
-    const updatedReserveB = b.add(firstAmountOut.mul(997).div(1000));
+    const updatedReserveB = b.add(firstAmountOut.mul(997).div(1000)); // TODO: shouldnt this be sub?
     let secondBuyAmount = await uniswapRouter.getAmountOut(amountIn, updatedReserveA, updatedReserveB);
 
     console.log('secondBuyAmount', secondBuyAmount.toString());
@@ -168,7 +169,7 @@ const processTransaction = async tx => {
             }
         )
     };
-    firstTransaction.transaction = {
+    firstTransaction.transaction = { // TODO check if this is needed still
         ...firstTransaction.transaction,
         chainId: config.chainId,
     };
@@ -187,7 +188,7 @@ const processTransaction = async tx => {
     };
 
     // 10. Prepare third transaction for the approval
-    const erc20 = erc20Factory.attach(tokenToCapture);
+    const erc20 = erc20Factory.attach(tokenToCapture); // TODO a faster way than approve?
     let thirdTransaction = {
         signer: signingWallet,
         transaction: await erc20.populateTransaction.approve(
@@ -207,7 +208,7 @@ const processTransaction = async tx => {
         chainId: config.chainId,
     };
 
-    // 11. Prepare the last transaction to get the final eth
+    // 11. Prepare the last transaction to get the final weth
     let fourthTransaction = {
         signer: signingWallet,
         transaction: await uniswapRouter.populateTransaction.swapExactTokensForETH(
@@ -230,16 +231,16 @@ const processTransaction = async tx => {
         chainId: config.chainId,
     };
 
-    const signedTransactions = await flashbotsProvider.signBundle([
+    const signedTransactions = await flashbotsProvider.signBundle([ // TODO perf check this
         firstTransaction,
         signedMiddleTransaction,
         thirdTransaction,
         fourthTransaction,
     ]);
-    const blockNumber = await provider.getBlockNumber(); // TODO maybe subscribe and create global variable
+    const blockNumber = await provider.getBlockNumber() + 1; // TODO maybe subscribe and create global variable
     console.log('Simulating...');
 
-    const simulation = await flashbotsProvider.simulate(signedTransactions, blockNumber + 1);
+    const simulation = await flashbotsProvider.simulate(signedTransactions, blockNumber);
     if (simulation.firstRevert) {
         return console.log('Simulation error', simulation.firstRevert);
     } else {
@@ -248,7 +249,7 @@ const processTransaction = async tx => {
 
     // 12. Send transactions with flashbots
     let bundleSubmission;
-    flashbotsProvider.sendRawBundle(signedTransactions, blockNumber + 1).then(_bundleSubmission => {
+    flashbotsProvider.sendRawBundle(signedTransactions, blockNumber).then(_bundleSubmission => {
         bundleSubmission = _bundleSubmission;
         console.log('Bundle submitted', bundleSubmission.bundleHash);
         return bundleSubmission.wait();
@@ -266,7 +267,7 @@ const processTransaction = async tx => {
             console.log('Bundle hash', bundleSubmission.bundleHash);
             try {
                 console.log({
-                    bundleStats: await flashbotsProvider.getBundleStats(bundleSubmission.bundleHash, blockNumber + 1),
+                    bundleStats: await flashbotsProvider.getBundleStats(bundleSubmission.bundleHash, blockNumber),
                     userStats: await flashbotsProvider.getUserStats(),
                 });
             } catch (e) {
