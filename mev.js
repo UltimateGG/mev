@@ -22,12 +22,12 @@ const signingWallet = new Wallet(process.env.PRIVATE_KEY).connect(provider);
 const { abi: uniswapRouterAbi, bytecode: uniswapRouterBytecode } = require('@uniswap/v2-periphery/build/UniswapV2Router02.json'); 
 const { abi: pairAbi, bytecode: pairBytecode } = require('@uniswap/v2-core/build/UniswapV2Pair.json');
 const { abi: erc20Abi, bytecode: erc20Bytecode } = require('@uniswap/v2-core/build/ERC20.json');
-const { abi: uniswapV3Abi } = require('@uniswap/universal-router/artifacts/contracts/UniversalRouter.sol/UniversalRouter.json');
+const { abi: universalRouterAbi } = require('@uniswap/universal-router/artifacts/contracts/UniversalRouter.sol/UniversalRouter.json');
 
 const uniswapRouter = new ethers.ContractFactory(uniswapRouterAbi, uniswapRouterBytecode, signingWallet).attach(config.uniswapRouter);
 const pairFactory = new ethers.ContractFactory(pairAbi, pairBytecode, signingWallet);
 const erc20Factory = new ethers.ContractFactory(erc20Abi, erc20Bytecode, signingWallet);
-const uniswapV3Interface = new ethers.utils.Interface(uniswapV3Abi);
+const universalRouterInterface = new ethers.utils.Interface(universalRouterAbi);
 
 // Runtime variables
 let flashbotsProvider;
@@ -75,7 +75,7 @@ const initialChecks = async tx => {
     if (transaction.to.toLowerCase() != config.universalRouter.toLowerCase()) return false;
 
     try {
-        decoded = uniswapV3Interface.parseTransaction(transaction);
+        decoded = universalRouterInterface.parseTransaction(transaction);
     } catch (e) {
         return false;
     }
