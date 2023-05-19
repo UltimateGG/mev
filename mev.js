@@ -38,8 +38,7 @@ let wethAddress;
 let factoryAddress;
 
 
-// 2. Create the start function to listen to transactions
-// 2.5. Decode uniswap universal router transactions
+// 2. Decode uniswap universal router transactions
 const decodeUniversalRouterSwap = input => {
     const abiCoder = new ethers.utils.AbiCoder();
     const decodedParameters = abiCoder.decode(['address', 'uint256', 'uint256', 'bytes', 'bool'], input);
