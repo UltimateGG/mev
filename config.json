@@ -1,0 +1,8 @@
+{
+  "goerli": {
+    "flashbotsURL": "https://relay-goerli.flashbots.net",
+    "httpProviderURL": "https://goerli.infura.io/v3/4e3422eaa27748b0a4914dc27eeedfe7",
+    "wsProviderURL": "wss://goerli.infura.io/ws/v3/4e3422eaa27748b0a4914dc27eeedfe7",
+    "chainId": 5
+  }
+}
