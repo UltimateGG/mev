@@ -137,19 +137,21 @@ const processTransaction = async tx => {
     const priorityFee = transaction.maxPriorityFeePerGas ? transaction.maxPriorityFeePerGas.add(bribeToMiners) : bribeToMiners;
 
     // 7. Buy using your amount in and calculate amount out
-    let firstAmountOut = await uniswapRouter.getAmountOut(buyAmount, a, b);
+    const firstAmountOut = await uniswapRouter.getAmountOut(buyAmount, a, b);
     const updatedReserveA = a.add(buyAmount);
     const updatedReserveB = b.add(firstAmountOut.mul(997).div(1000)); // TODO: shouldnt this be sub?
-    let secondBuyAmount = await uniswapRouter.getAmountOut(amountIn, updatedReserveA, updatedReserveB);
 
-    console.log('secondBuyAmount', secondBuyAmount.toString());
+    // The price the victim buys at changed because we just "bought"
+    const victimBuyAmount = await uniswapRouter.getAmountOut(amountIn, updatedReserveA, updatedReserveB);
+
+    console.log('secondBuyAmount', victimBuyAmount.toString()); // TODO temp
     console.log('minAmountOut', minAmountOut.toString());
-    if (secondBuyAmount.lt(minAmountOut)) return console.log('Victim would get less than the minimum');
+    if (victimBuyAmount.lt(minAmountOut)) return console.log('Victim would get less than the minimum');
 
     const updatedReserveA2 = updatedReserveA.add(amountIn);
-    const updatedReserveB2 = updatedReserveB.add(secondBuyAmount.mul(997).div(1000));
+    const updatedReserveB2 = updatedReserveB.add(victimBuyAmount.mul(997).div(1000)); // TODO: shouldnt this be sub?
     // How much ETH we get at the end with a potential profit
-    let thirdAmountOut = await uniswapRouter.getAmountOut(firstAmountOut, updatedReserveB2, updatedReserveA2);
+    const thirdAmountOut = await uniswapRouter.getAmountOut(firstAmountOut, updatedReserveB2, updatedReserveA2); // b -> a because we're swapping back
 
     // 8. Prepare first transaction
     const deadline = Math.floor(Date.now() / 1000) + 60 * 60; // 1 hour from now
@@ -241,8 +243,8 @@ const processTransaction = async tx => {
     console.log('Simulating...');
 
     const simulation = await flashbotsProvider.simulate(signedTransactions, blockNumber);
-    if (simulation.firstRevert) {
-        return console.log('Simulation error', simulation.firstRevert);
+    if (simulation.firstRevert || simulation.error) {
+        return console.log('Simulation error', simulation.firstRevert || simulation.error);
     } else {
         console.log('Simulation success', simulation);
     }
