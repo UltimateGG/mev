@@ -54,7 +54,7 @@ const decodeUniversalRouterSwap = input => {
     return {
         recipient: parseInt(decodedParameters[0, 16]),
         amountIn: decodedParameters[1],
-        minAmountOut: decodedParameters[2],
+        minAmountOut: decodedParameters[2], // basically slippage
         path,
         hasTwoPath,
     };
@@ -80,13 +80,13 @@ const initialChecks = async tx => {
         return false;
     }
 
-    // If the swap is not for uniswapV2 we return it
+    // If the swap is not for uniswapV2 we return it  // TODO support v3? 0x00 0x01 0x09 
     if (!decoded.args.commands.includes('08')) return false;
     let swapPositionInCommands = decoded.args.commands.substring(2).indexOf('08') / 2;
     let inputPosition = decoded.args.inputs[swapPositionInCommands];
 
     let decodedSwap = decodeUniversalRouterSwap(inputPosition);
-    if (!decodedSwap.hasTwoPath || decodedSwap.recipient === 2) return false;
+    if (!decodedSwap.hasTwoPath || decodedSwap.recipient === 2) return false; // TODO figure out what recipient 2 is
     if (decodedSwap.path[0].toLowerCase() != wethAddress.toLowerCase()) return false;
 
     return {

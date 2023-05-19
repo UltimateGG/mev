@@ -6,5 +6,13 @@
     "chainId": 5,
     "uniswapRouter": "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
     "universalRouter": "0x4648a43B2C14Da09FdF82B161150d3F634f40491"
+  },
+  "mainnet": {
+    "flashbotsURL": "https://relay.flashbots.net",
+    "httpProviderURL": "https://mainnet.infura.io/v3/4e3422eaa27748b0a4914dc27eeedfe7",
+    "wsProviderURL": "wss://mainnet.infura.io/ws/v3/4e3422eaa27748b0a4914dc27eeedfe7",
+    "chainId": 1,
+    "uniswapRouter": "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
+    "universalRouter": "0xEf1c6E67703c7BD7107eed8303Fbe6EC2554BF6B"
   }
 }
