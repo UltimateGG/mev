@@ -3,6 +3,8 @@
     "flashbotsURL": "https://relay-goerli.flashbots.net",
     "httpProviderURL": "https://goerli.infura.io/v3/4e3422eaa27748b0a4914dc27eeedfe7",
     "wsProviderURL": "wss://goerli.infura.io/ws/v3/4e3422eaa27748b0a4914dc27eeedfe7",
-    "chainId": 5
+    "chainId": 5,
+    "uniswapRouter": "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
+    "universalRouter": "0x4648a43B2C14Da09FdF82B161150d3F634f40491"
   }
 }

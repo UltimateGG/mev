@@ -5,14 +5,13 @@
 require('dotenv').config();
 const { Wallet, ethers } = require('ethers');
 const { FlashbotsBundleProvider, FlashbotsBundleResolution } = require('@flashbots/ethers-provider-bundle');
+const { getPairAddress } = require('./utils');
 
 
 // 1.1 Load ABIs and Bytecode
 const fs = require('fs');
 const UniswapAbi = JSON.parse(fs.readFileSync('./data/uniswap.json'));
 const UniswapBytecode = fs.readFileSync('./data/uniswap.hex').toString();
-const UniswapFactoryAbi = JSON.parse(fs.readFileSync('./data/uniswapFactory.json'));
-const UniswapFactoryBytecode = fs.readFileSync('./data/uniswapFactory.hex').toString();
 const pairAbi = JSON.parse(fs.readFileSync('./data/uniswapPair.json'));
 const pairBytecode = fs.readFileSync('./data/uniswapPair.hex').toString();
 const erc20Abi = JSON.parse(fs.readFileSync('./data/erc20.json'));
@@ -21,24 +20,23 @@ const uniswapV3Abi = JSON.parse(fs.readFileSync('./data/uniswapV3.json'));
 
 // 1.2 Setup config
 const config = require('./config.json')[process.argv[2] || 'goerli'];
-const wethAddress = '0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6';
-const uniswapAddress = '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D'; // UniswapV2Router02
-const uniswapFactoryAddress = '0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f';
-const universalRouterAddress = '0x4648a43B2C14Da09FdF82B161150d3F634f40491';
 const bribeToMiners = ethers.utils.parseUnits('20', 'gwei');
 const buyAmount = ethers.utils.parseUnits('0.1', 'ether');
-const chainId = config.chainId;
 
 // 1.3 Setup contracts and providers
 const provider = new ethers.providers.JsonRpcProvider(config.httpProviderURL);
 const wsProvider = new ethers.providers.WebSocketProvider(config.wsProviderURL);
 const signingWallet = new Wallet(process.env.PRIVATE_KEY).connect(provider);
 const uniswapV3Interface = new ethers.utils.Interface(uniswapV3Abi);
-const factoryUniswapFactory = new ethers.ContractFactory(UniswapFactoryAbi, UniswapFactoryBytecode, signingWallet).attach(uniswapFactoryAddress);
 const erc20Factory = new ethers.ContractFactory(erc20Abi, erc20Bytecode, signingWallet);
 const pairFactory = new ethers.ContractFactory(pairAbi, pairBytecode, signingWallet);
-const uniswap = new ethers.ContractFactory(UniswapAbi, UniswapBytecode, signingWallet).attach(uniswapAddress);
-let flashbotsProvider = null;
+const uniswap = new ethers.ContractFactory(UniswapAbi, UniswapBytecode, signingWallet).attach(config.uniswapRouter);
+
+// Runtime variables
+let flashbotsProvider;
+let wethAddress;
+let factoryAddress;
+
 
 // 2. Create the start function to listen to transactions
 // 2.5. Decode uniswap universal router transactions
@@ -78,7 +76,7 @@ const initialChecks = async tx => {
     }
 
     if (!transaction || !transaction.to || Number(transaction.value) == 0) return false;
-    if (transaction.to.toLowerCase() != universalRouterAddress.toLowerCase()) return false;
+    if (transaction.to.toLowerCase() != config.universalRouter.toLowerCase()) return false;
 
     try {
         decoded = uniswapV3Interface.parseTransaction(transaction);
@@ -117,7 +115,7 @@ const processTransaction = async tx => {
     console.log('checks passed', tx);
 
     // 5. Get and sort the reserves
-    const pairAddress = await factoryUniswapFactory.getPair(wethAddress, tokenToCapture);
+    const pairAddress = getPairAddress(factoryAddress, wethAddress, tokenToCapture);
     const pair = pairFactory.attach(pairAddress);
 
     let reserves = null;
@@ -150,6 +148,7 @@ const processTransaction = async tx => {
     console.log('secondBuyAmount', secondBuyAmount.toString());
     console.log('minAmountOut', minAmountOut.toString());
     if (secondBuyAmount.lt(minAmountOut)) return console.log('Victim would get less than the minimum');
+
     const updatedReserveA2 = updatedReserveA.add(amountIn);
     const updatedReserveB2 = updatedReserveB.add(secondBuyAmount.mul(997).div(1000));
     // How much ETH we get at the end with a potential profit
@@ -178,12 +177,12 @@ const processTransaction = async tx => {
     };
     firstTransaction.transaction = {
         ...firstTransaction.transaction,
-        chainId,
+        chainId: config.chainId,
     };
 
     // 9. Prepare second transaction
     const victimsTransactionWithChainId = {
-        chainId,
+        chainId: config.chainId,
         ...transaction,
     };
     const signedMiddleTransaction = {
@@ -199,7 +198,7 @@ const processTransaction = async tx => {
     let thirdTransaction = {
         signer: signingWallet,
         transaction: await erc20.populateTransaction.approve(
-            uniswapAddress,
+            config.uniswapRouter,
             firstAmountOut,
             {
                 value: '0',
@@ -212,7 +211,7 @@ const processTransaction = async tx => {
     };
     thirdTransaction.transaction = {
         ...thirdTransaction.transaction,
-        chainId,
+        chainId: config.chainId,
     };
 
     // 11. Prepare the last transaction to get the final eth
@@ -238,7 +237,7 @@ const processTransaction = async tx => {
     };
     fourthTransaction.transaction = {
         ...fourthTransaction.transaction,
-        chainId,
+        chainId: config.chainId,
     };
 
     const signedTransactions = await flashbotsProvider.signBundle([
@@ -259,10 +258,7 @@ const processTransaction = async tx => {
 
     // 12. Send transactions with flashbots
     let bundleSubmission;
-    flashbotsProvider.sendRawBundle(
-        signedTransactions,
-        blockNumber + 1,
-    ).then(_bundleSubmission => {
+    flashbotsProvider.sendRawBundle(signedTransactions, blockNumber + 1).then(_bundleSubmission => {
         bundleSubmission = _bundleSubmission;
         console.log('Bundle submitted', bundleSubmission.bundleHash);
         return bundleSubmission.wait();
@@ -292,7 +288,10 @@ const processTransaction = async tx => {
 
 const start = async () => {
     flashbotsProvider = await FlashbotsBundleProvider.create(provider, signingWallet, config.flashbotsURL);
-    console.log('Listening for transactions on the chain id', chainId);
+    wethAddress = await uniswap.WETH();
+    factoryAddress = await uniswap.factory();
+
+    console.log('Listening for transactions on the chain id', config.chainId);
 
     wsProvider.on('pending', tx => {
         // console.log('tx', tx);
@@ -301,6 +300,7 @@ const start = async () => {
 }
 
 start();
+
 
 // TODO Next steps:
 // - Calculate gas costs
@@ -311,5 +311,4 @@ start();
 // - Use multiple cores from your computer to improve performance
 // - Calculate the transaction array for type 0 and type 2 transactions
 // - Implement multiple dexes like uniswap, shibaswap, sushiswap and others
-// - Calculate the pair address locally with a function without a blockchain request
 // - Calculate the exact amount you'll get in profit after the first, middle and last trade without a request and without loops
