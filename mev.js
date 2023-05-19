@@ -42,7 +42,7 @@ let factoryAddress;
 const decodeUniversalRouterSwap = input => {
     const abiCoder = new ethers.utils.AbiCoder();
     const decodedParameters = abiCoder.decode(['address', 'uint256', 'uint256', 'bytes', 'bool'], input);
-    const breakdown = input.substring(2).match(/.{1,64}/g);
+    const breakdown = input.substring(2).match(/.{1,64}/g); // TODO maybe faster way without regex?
 
     let path = [];
     let hasTwoPath = true;
@@ -159,10 +159,7 @@ const processTransaction = async tx => {
         signer: signingWallet,
         transaction: await uniswap.populateTransaction.swapExactETHForTokens(
             firstAmountOut,
-            [
-                wethAddress,
-                tokenToCapture,
-            ],
+            [wethAddress, tokenToCapture],
             signingWallet.address,
             deadline,
             {
@@ -219,10 +216,7 @@ const processTransaction = async tx => {
         transaction: await uniswap.populateTransaction.swapExactTokensForETH(
             firstAmountOut,
             thirdAmountOut,
-            [
-                tokenToCapture,
-                wethAddress,
-            ],
+            [tokenToCapture, wethAddress],
             signingWallet.address,
             deadline,
             {
@@ -291,7 +285,6 @@ const start = async () => {
     factoryAddress = await uniswap.factory();
 
     console.log('Listening for transactions on the chain id', config.chainId);
-
     wsProvider.on('pending', tx => {
         // console.log('tx', tx);
         processTransaction(tx);
