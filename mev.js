@@ -8,29 +8,26 @@ const { FlashbotsBundleProvider, FlashbotsBundleResolution } = require('@flashbo
 const { getPairAddress } = require('./utils');
 
 
-// 1.1 Load ABIs and Bytecode
-const fs = require('fs');
-const UniswapAbi = JSON.parse(fs.readFileSync('./data/uniswap.json'));
-const UniswapBytecode = fs.readFileSync('./data/uniswap.hex').toString();
-const pairAbi = JSON.parse(fs.readFileSync('./data/uniswapPair.json'));
-const pairBytecode = fs.readFileSync('./data/uniswapPair.hex').toString();
-const erc20Abi = JSON.parse(fs.readFileSync('./data/erc20.json'));
-const erc20Bytecode = fs.readFileSync('./data/erc20.hex').toString();
-const uniswapV3Abi = JSON.parse(fs.readFileSync('./data/uniswapV3.json'));
-
-// 1.2 Setup config
+// 1.1 Setup config
 const config = require('./config.json')[process.argv[2] || 'goerli'];
 const bribeToMiners = ethers.utils.parseUnits('20', 'gwei');
 const buyAmount = ethers.utils.parseUnits('0.1', 'ether');
+const GAS_LIMIT = 300_000;
 
-// 1.3 Setup contracts and providers
+// 1.2 Setup contracts and providers
 const provider = new ethers.providers.JsonRpcProvider(config.httpProviderURL);
 const wsProvider = new ethers.providers.WebSocketProvider(config.wsProviderURL);
 const signingWallet = new Wallet(process.env.PRIVATE_KEY).connect(provider);
-const uniswapV3Interface = new ethers.utils.Interface(uniswapV3Abi);
-const erc20Factory = new ethers.ContractFactory(erc20Abi, erc20Bytecode, signingWallet);
+
+const { abi: uniswapRouterAbi, bytecode: uniswapRouterBytecode } = require('@uniswap/v2-periphery/build/UniswapV2Router02.json'); 
+const { abi: pairAbi, bytecode: pairBytecode } = require('@uniswap/v2-core/build/UniswapV2Pair.json');
+const { abi: erc20Abi, bytecode: erc20Bytecode } = require('@uniswap/v2-core/build/ERC20.json');
+const { abi: uniswapV3Abi } = require('@uniswap/universal-router/artifacts/contracts/UniversalRouter.sol/UniversalRouter.json');
+
+const uniswapRouter = new ethers.ContractFactory(uniswapRouterAbi, uniswapRouterBytecode, signingWallet).attach(config.uniswapRouter);
 const pairFactory = new ethers.ContractFactory(pairAbi, pairBytecode, signingWallet);
-const uniswap = new ethers.ContractFactory(UniswapAbi, UniswapBytecode, signingWallet).attach(config.uniswapRouter);
+const erc20Factory = new ethers.ContractFactory(erc20Abi, erc20Bytecode, signingWallet);
+const uniswapV3Interface = new ethers.utils.Interface(uniswapV3Abi);
 
 // Runtime variables
 let flashbotsProvider;
@@ -139,10 +136,10 @@ const processTransaction = async tx => {
     const priorityFee = transaction.maxPriorityFeePerGas ? transaction.maxPriorityFeePerGas.add(bribeToMiners) : bribeToMiners;
 
     // 7. Buy using your amount in and calculate amount out
-    let firstAmountOut = await uniswap.getAmountOut(buyAmount, a, b);
+    let firstAmountOut = await uniswapRouter.getAmountOut(buyAmount, a, b);
     const updatedReserveA = a.add(buyAmount);
     const updatedReserveB = b.add(firstAmountOut.mul(997).div(1000));
-    let secondBuyAmount = await uniswap.getAmountOut(amountIn, updatedReserveA, updatedReserveB);
+    let secondBuyAmount = await uniswapRouter.getAmountOut(amountIn, updatedReserveA, updatedReserveB);
 
     console.log('secondBuyAmount', secondBuyAmount.toString());
     console.log('minAmountOut', minAmountOut.toString());
@@ -151,13 +148,13 @@ const processTransaction = async tx => {
     const updatedReserveA2 = updatedReserveA.add(amountIn);
     const updatedReserveB2 = updatedReserveB.add(secondBuyAmount.mul(997).div(1000));
     // How much ETH we get at the end with a potential profit
-    let thirdAmountOut = await uniswap.getAmountOut(firstAmountOut, updatedReserveB2, updatedReserveA2);
+    let thirdAmountOut = await uniswapRouter.getAmountOut(firstAmountOut, updatedReserveB2, updatedReserveA2);
 
     // 8. Prepare first transaction
     const deadline = Math.floor(Date.now() / 1000) + 60 * 60; // 1 hour from now
     let firstTransaction = {
         signer: signingWallet,
-        transaction: await uniswap.populateTransaction.swapExactETHForTokens(
+        transaction: await uniswapRouter.populateTransaction.swapExactETHForTokens(
             firstAmountOut,
             [wethAddress, tokenToCapture],
             signingWallet.address,
@@ -167,7 +164,7 @@ const processTransaction = async tx => {
                 type: 2,
                 maxFeePerGas: maxGasFee,
                 maxPriorityFeePerGas: priorityFee,
-                gasLimit: 300000,
+                gasLimit: GAS_LIMIT,
             }
         )
     };
@@ -201,7 +198,7 @@ const processTransaction = async tx => {
                 type: 2,
                 maxFeePerGas: maxGasFee,
                 maxPriorityFeePerGas: priorityFee,
-                gasLimit: 300000,
+                gasLimit: GAS_LIMIT,
             }
         ),
     };
@@ -213,7 +210,7 @@ const processTransaction = async tx => {
     // 11. Prepare the last transaction to get the final eth
     let fourthTransaction = {
         signer: signingWallet,
-        transaction: await uniswap.populateTransaction.swapExactTokensForETH(
+        transaction: await uniswapRouter.populateTransaction.swapExactTokensForETH(
             firstAmountOut,
             thirdAmountOut,
             [tokenToCapture, wethAddress],
@@ -224,7 +221,7 @@ const processTransaction = async tx => {
                 type: 2,
                 maxFeePerGas: maxGasFee,
                 maxPriorityFeePerGas: priorityFee,
-                gasLimit: 300000,
+                gasLimit: GAS_LIMIT,
             }
         )
     };
@@ -239,7 +236,7 @@ const processTransaction = async tx => {
         thirdTransaction,
         fourthTransaction,
     ]);
-    const blockNumber = await provider.getBlockNumber();
+    const blockNumber = await provider.getBlockNumber(); // TODO maybe subscribe and create global variable
     console.log('Simulating...');
 
     const simulation = await flashbotsProvider.simulate(signedTransactions, blockNumber + 1);
@@ -281,8 +278,8 @@ const processTransaction = async tx => {
 
 const start = async () => {
     flashbotsProvider = await FlashbotsBundleProvider.create(provider, signingWallet, config.flashbotsURL);
-    wethAddress = await uniswap.WETH();
-    factoryAddress = await uniswap.factory();
+    wethAddress = await uniswapRouter.WETH();
+    factoryAddress = await uniswapRouter.factory();
 
     console.log('Listening for transactions on the chain id', config.chainId);
     wsProvider.on('pending', tx => {
