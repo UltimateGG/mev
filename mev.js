@@ -32,6 +32,7 @@ const universalRouterInterface = new ethers.utils.Interface(universalRouterAbi);
 // Runtime variables
 let flashbotsProvider;
 let wethAddress;
+let wethBigNumber;
 let factoryAddress;
 
 
@@ -62,7 +63,7 @@ const initialChecks = async tx => {
     let decoded = null;
 
     try {
-        transaction = await provider.getTransaction(tx);
+        transaction = await provider.getTransaction(tx); // TODO way to get details in event
     } catch (e) {
         return false;
     }
@@ -124,7 +125,7 @@ const processTransaction = async tx => {
     
     let reserveA;
     let reserveB;
-    if (wethAddress < tokenToCapture) { // TODO: fixme?
+    if (wethBigNumber.lt(tokenToCapture)) {
         reserveA = reserves._reserve0;
         reserveB = reserves._reserve1;
     } else {
@@ -288,6 +289,7 @@ const processTransaction = async tx => {
 const start = async () => {
     flashbotsProvider = await FlashbotsBundleProvider.create(provider, signingWallet, config.flashbotsURL);
     wethAddress = await uniswapRouter.WETH();
+    wethBigNumber = ethers.BigNumber.from(wethAddress);
     factoryAddress = await uniswapRouter.factory();
 
     console.log('Listening for transactions on the chain id', config.chainId);
