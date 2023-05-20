@@ -153,6 +153,11 @@ const processTransaction = async tx => {
     // How much ETH we get at the end with a potential profit
     const thirdAmountOut = await uniswapRouter.getAmountOut(firstAmountOut, updatedReserveB2, updatedReserveA2); // b -> a because we're swapping back
 
+    const profit = thirdAmountOut.sub(buyAmount);
+    console.log(`Profit: ${ethers.utils.formatEther(profit)} ETH`);
+
+    if (profit.lt(0)) return console.log('Profit too low');
+
     // 8. Prepare first transaction
     const deadline = Math.floor(Date.now() / 1000) + 60 * 60; // 1 hour from now
     let firstTransaction = {
