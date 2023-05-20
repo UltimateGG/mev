@@ -157,23 +157,22 @@ const processTransaction = async tx => {
     const deadline = Math.floor(Date.now() / 1000) + 60 * 60; // 1 hour from now
     let firstTransaction = {
         signer: signingWallet,
-        transaction: await uniswapRouter.populateTransaction.swapExactETHForTokens(
-            firstAmountOut,
-            [wethAddress, tokenToCapture],
-            signingWallet.address,
-            deadline,
-            {
-                value: buyAmount,
-                type: 2,
-                maxFeePerGas: maxGasFee,
-                maxPriorityFeePerGas: priorityFee,
-                gasLimit: GAS_LIMIT,
-            }
-        )
-    };
-    firstTransaction.transaction = { // TODO check if this is needed still
-        ...firstTransaction.transaction,
-        chainId: config.chainId,
+        transaction: {
+            ...await uniswapRouter.populateTransaction.swapExactETHForTokens(
+                firstAmountOut,
+                [wethAddress, tokenToCapture],
+                signingWallet.address,
+                deadline,
+                {
+                    value: buyAmount,
+                    type: 2,
+                    maxFeePerGas: maxGasFee,
+                    maxPriorityFeePerGas: priorityFee,
+                    gasLimit: GAS_LIMIT,
+                }
+            ),
+            chainId: config.chainId,
+        }
     };
 
     // 9. Prepare second transaction
@@ -186,51 +185,49 @@ const processTransaction = async tx => {
             r: victimsTransactionWithChainId.r,
             s: victimsTransactionWithChainId.s,
             v: victimsTransactionWithChainId.v,
-        })
+        }),
     };
 
     // 10. Prepare third transaction for the approval
     const erc20 = erc20Factory.attach(tokenToCapture); // TODO a faster way than approve?
     let thirdTransaction = {
         signer: signingWallet,
-        transaction: await erc20.populateTransaction.approve(
-            config.uniswapRouter,
-            firstAmountOut,
-            {
-                value: '0',
-                type: 2,
-                maxFeePerGas: maxGasFee,
-                maxPriorityFeePerGas: priorityFee,
-                gasLimit: GAS_LIMIT,
-            }
-        ),
-    };
-    thirdTransaction.transaction = {
-        ...thirdTransaction.transaction,
-        chainId: config.chainId,
+        transaction: {
+            ...await erc20.populateTransaction.approve(
+                config.uniswapRouter,
+                firstAmountOut,
+                {
+                    value: '0',
+                    type: 2,
+                    maxFeePerGas: maxGasFee,
+                    maxPriorityFeePerGas: priorityFee,
+                    gasLimit: GAS_LIMIT,
+                }
+            ),
+            chainId: config.chainId,
+        }
     };
 
     // 11. Prepare the last transaction to get the final weth
     let fourthTransaction = {
         signer: signingWallet,
-        transaction: await uniswapRouter.populateTransaction.swapExactTokensForETH(
-            firstAmountOut,
-            thirdAmountOut,
-            [tokenToCapture, wethAddress],
-            signingWallet.address,
-            deadline,
-            {
-                value: '0',
-                type: 2,
-                maxFeePerGas: maxGasFee,
-                maxPriorityFeePerGas: priorityFee,
-                gasLimit: GAS_LIMIT,
-            }
-        )
-    };
-    fourthTransaction.transaction = {
-        ...fourthTransaction.transaction,
-        chainId: config.chainId,
+        transaction: {
+            ...await uniswapRouter.populateTransaction.swapExactTokensForETH(
+                firstAmountOut,
+                thirdAmountOut,
+                [tokenToCapture, wethAddress],
+                signingWallet.address,
+                deadline,
+                {
+                    value: '0',
+                    type: 2,
+                    maxFeePerGas: maxGasFee,
+                    maxPriorityFeePerGas: priorityFee,
+                    gasLimit: GAS_LIMIT,
+                }
+            ),
+            chainId: config.chainId,
+        }
     };
 
     const signedTransactions = await flashbotsProvider.signBundle([ // TODO perf check this
