@@ -144,20 +144,20 @@ const processTransaction = async tx => {
     const priorityFee = transaction.maxPriorityFeePerGas ? transaction.maxPriorityFeePerGas.add(bribeToMiners) : bribeToMiners;
 
     // 7. Buy using your amount in and calculate amount out
-    const firstAmountOut = getAmountOut(buyAmount, reserveA, reserveB);
+    const ourAmountTokens = getAmountOut(buyAmount, reserveA, reserveB);
     reserveA = reserveA.add(buyAmount);
-    reserveB = reserveB.sub(firstAmountOut.mul(997).div(1000));
+    reserveB = reserveB.sub(ourAmountTokens.mul(997).div(1000));
 
     // The price the victim buys at changed because we just "bought"
-    const victimBuyAmount = getAmountOut(amountIn, reserveA, reserveB);
-    if (victimBuyAmount.lt(minAmountOut)) return console.log('Victim would get less than the minimum');
+    const victimAmountTokens = getAmountOut(amountIn, reserveA, reserveB);
+    if (victimAmountTokens.lt(minAmountOut)) return console.log('Victim would get less than the minimum');
 
     reserveA = reserveA.add(amountIn);
-    reserveB = reserveB.sub(victimBuyAmount.mul(997).div(1000));
+    reserveB = reserveB.sub(victimAmountTokens.mul(997).div(1000));
 
     // How much ETH we get at the end with a potential profit
-    const thirdAmountOut = getAmountOut(firstAmountOut, reserveB, reserveA); // b -> a because we're swapping back
-    const profit = thirdAmountOut.sub(buyAmount);
+    const wethOut = getAmountOut(ourAmountTokens, reserveB, reserveA); // b -> a because we're swapping back
+    const profit = wethOut.sub(buyAmount);
     console.log(`Profit: ${ethers.utils.formatEther(profit)} ETH`);
 
     if (profit.lte(0)) return console.log('Transaction is not profitable');
@@ -169,7 +169,7 @@ const processTransaction = async tx => {
         signer: signingWallet,
         transaction: {
             ...await uniswapRouter.populateTransaction.swapExactETHForTokens(
-                firstAmountOut,
+                ourAmountTokens,
                 [wethAddress, tokenToCapture],
                 signingWallet.address,
                 deadline,
@@ -205,7 +205,7 @@ const processTransaction = async tx => {
         transaction: {
             ...await erc20.populateTransaction.approve(
                 config.uniswapRouter,
-                firstAmountOut,
+                ourAmountTokens,
                 {
                     value: '0',
                     type: 2,
@@ -223,8 +223,8 @@ const processTransaction = async tx => {
         signer: signingWallet,
         transaction: {
             ...await uniswapRouter.populateTransaction.swapExactTokensForETH(
-                firstAmountOut,
-                thirdAmountOut,
+                ourAmountTokens,
+                wethOut,
                 [tokenToCapture, wethAddress],
                 signingWallet.address,
                 deadline,
