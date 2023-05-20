@@ -5,7 +5,7 @@
 require('dotenv').config();
 const { Wallet, ethers } = require('ethers');
 const { FlashbotsBundleProvider, FlashbotsBundleResolution } = require('@flashbots/ethers-provider-bundle');
-const { getPairAddress } = require('./utils');
+const { getPairAddress, getAmountOut } = require('./utils');
 
 
 // 1.1 Setup config
@@ -110,18 +110,18 @@ const processTransaction = async tx => {
     } = checksPassed;
 
     console.log('checks passed', tx);
-
+    
     // 5. Get and sort the reserves
     const pairAddress = getPairAddress(factoryAddress, wethAddress, tokenToCapture);
     const pair = pairFactory.attach(pairAddress);
-
+    
     let reserves = null;
     try {
         reserves = await pair.getReserves();
     } catch (e) {
         return false;
     }
-
+    
     let reserveA;
     let reserveB;
     if (wethAddress < tokenToCapture) { // TODO: fixme?
@@ -132,34 +132,34 @@ const processTransaction = async tx => {
         reserveB = reserves._reserve0;
     }
 
-    // Calculate the victims set slippage %
-    const amtVictimWouldGet = await uniswapRouter.getAmountOut(amountIn, reserveA, reserveB);
-    const victimSlippage = amtVictimWouldGet.sub(minAmountOut).mul(100).div(minAmountOut);
-    if (victimSlippage.lte(0)) return false; // Victim has 0 slippage tolerance
-    console.log(`Max slippage: ${victimSlippage}%`);
+    // Calculate the difference between the current price and the minimum price (effectivley slippage)
+    const amtVictimWouldGet = getAmountOut(amountIn, reserveA, reserveB);
+    const maxSlippage = amtVictimWouldGet.sub(minAmountOut).mul(100).div(minAmountOut);
+    if (maxSlippage.lte(0)) return false; // 0 slippage
+    console.log(`MEV: ${maxSlippage}%`);
 
     // 6. Get fee costs for simplicity we'll add the user's gas fee
     const maxGasFee = transaction.maxFeePerGas ? transaction.maxFeePerGas.add(bribeToMiners) : bribeToMiners;
     const priorityFee = transaction.maxPriorityFeePerGas ? transaction.maxPriorityFeePerGas.add(bribeToMiners) : bribeToMiners;
 
     // 7. Buy using your amount in and calculate amount out
-    const firstAmountOut = await uniswapRouter.getAmountOut(buyAmount, reserveA, reserveB);
+    const firstAmountOut = getAmountOut(buyAmount, reserveA, reserveB);
     reserveA = reserveA.add(buyAmount);
     reserveB = reserveB.sub(firstAmountOut);
 
     // The price the victim buys at changed because we just "bought"
-    const victimBuyAmount = await uniswapRouter.getAmountOut(amountIn, reserveA, reserveB);
+    const victimBuyAmount = getAmountOut(amountIn, reserveA, reserveB);
     if (victimBuyAmount.lt(minAmountOut)) return console.log('Victim would get less than the minimum');
 
     reserveA = reserveA.add(amountIn);
     reserveB = reserveB.sub(victimBuyAmount);
-    // How much ETH we get at the end with a potential profit
-    const thirdAmountOut = await uniswapRouter.getAmountOut(firstAmountOut, reserveB, reserveA); // b -> a because we're swapping back
 
+    // How much ETH we get at the end with a potential profit
+    const thirdAmountOut = getAmountOut(firstAmountOut, reserveB, reserveA); // b -> a because we're swapping back
     const profit = thirdAmountOut.sub(buyAmount);
     console.log(`Profit: ${ethers.utils.formatEther(profit)} ETH`);
 
-    if (profit.lt(0)) return console.log('Transaction is not profitable');
+    if (profit.lte(0)) return console.log('Transaction is not profitable');
     if (true) return;
 
     // 8. Prepare first transaction
@@ -303,10 +303,9 @@ start();
 // TODO Next steps:
 // - Calculate gas costs
 // - Estimate the next base fee
-// - Calculate amounts out locally
 // - Use multiple block builders besides flashbots
 // - Reduce gas costs by using an assembly yul contract
 // - Use multiple cores from your computer to improve performance
 // - Calculate the transaction array for type 0 and type 2 transactions
 // - Implement multiple dexes like uniswap, shibaswap, sushiswap and others
-// - Calculate the exact amount you'll get in profit after the first, middle and last trade without a request and without loops
+// - Calculate optimal buy amount

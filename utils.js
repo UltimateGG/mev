@@ -35,8 +35,16 @@ const getPairAddress = (factoryAddress, token1, token2) => {
   return addr;
 }
 
+const getAmountOut = (amountIn, reserveIn, reserveOut) => {
+  const amountInWithFee = amountIn.mul(997);
+  const numerator = amountInWithFee.mul(reserveOut);
+  const denominator = reserveIn.mul(1000).add(amountInWithFee);
+  return numerator.div(denominator);
+}
+
 
 module.exports = {
   sortAddresses,
-  getPairAddress
+  getPairAddress,
+  getAmountOut,
 };
