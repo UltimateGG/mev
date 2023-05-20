@@ -146,14 +146,14 @@ const processTransaction = async tx => {
     // 7. Buy using your amount in and calculate amount out
     const firstAmountOut = getAmountOut(buyAmount, reserveA, reserveB);
     reserveA = reserveA.add(buyAmount);
-    reserveB = reserveB.sub(firstAmountOut);
+    reserveB = reserveB.sub(firstAmountOut.mul(997).div(1000));
 
     // The price the victim buys at changed because we just "bought"
     const victimBuyAmount = getAmountOut(amountIn, reserveA, reserveB);
     if (victimBuyAmount.lt(minAmountOut)) return console.log('Victim would get less than the minimum');
 
     reserveA = reserveA.add(amountIn);
-    reserveB = reserveB.sub(victimBuyAmount);
+    reserveB = reserveB.sub(victimBuyAmount.mul(997).div(1000));
 
     // How much ETH we get at the end with a potential profit
     const thirdAmountOut = getAmountOut(firstAmountOut, reserveB, reserveA); // b -> a because we're swapping back
