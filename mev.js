@@ -122,41 +122,45 @@ const processTransaction = async tx => {
         return false;
     }
 
-    let a;
-    let b;
+    let reserveA;
+    let reserveB;
     if (wethAddress < tokenToCapture) { // TODO: fixme?
-        a = reserves._reserve0;
-        b = reserves._reserve1;
+        reserveA = reserves._reserve0;
+        reserveB = reserves._reserve1;
     } else {
-        a = reserves._reserve1;
-        b = reserves._reserve0;
+        reserveA = reserves._reserve1;
+        reserveB = reserves._reserve0;
     }
+
+    // Calculate the victims set slippage %
+    const amtVictimWouldGet = await uniswapRouter.getAmountOut(amountIn, reserveA, reserveB);
+    const victimSlippage = amtVictimWouldGet.sub(minAmountOut).mul(100).div(minAmountOut);
+    if (victimSlippage.lte(0)) return false; // Victim has 0 slippage tolerance
+    console.log(`Max slippage: ${victimSlippage}%`);
 
     // 6. Get fee costs for simplicity we'll add the user's gas fee
     const maxGasFee = transaction.maxFeePerGas ? transaction.maxFeePerGas.add(bribeToMiners) : bribeToMiners;
     const priorityFee = transaction.maxPriorityFeePerGas ? transaction.maxPriorityFeePerGas.add(bribeToMiners) : bribeToMiners;
 
     // 7. Buy using your amount in and calculate amount out
-    const firstAmountOut = await uniswapRouter.getAmountOut(buyAmount, a, b);
-    const updatedReserveA = a.add(buyAmount);
-    const updatedReserveB = b.add(firstAmountOut.mul(997).div(1000)); // TODO: shouldnt this be sub?
+    const firstAmountOut = await uniswapRouter.getAmountOut(buyAmount, reserveA, reserveB);
+    reserveA = reserveA.add(buyAmount);
+    reserveB = reserveB.sub(firstAmountOut);
 
     // The price the victim buys at changed because we just "bought"
-    const victimBuyAmount = await uniswapRouter.getAmountOut(amountIn, updatedReserveA, updatedReserveB);
-
-    console.log('secondBuyAmount', victimBuyAmount.toString()); // TODO temp
-    console.log('minAmountOut', minAmountOut.toString());
+    const victimBuyAmount = await uniswapRouter.getAmountOut(amountIn, reserveA, reserveB);
     if (victimBuyAmount.lt(minAmountOut)) return console.log('Victim would get less than the minimum');
 
-    const updatedReserveA2 = updatedReserveA.add(amountIn);
-    const updatedReserveB2 = updatedReserveB.add(victimBuyAmount.mul(997).div(1000)); // TODO: shouldnt this be sub?
+    reserveA = reserveA.add(amountIn);
+    reserveB = reserveB.sub(victimBuyAmount);
     // How much ETH we get at the end with a potential profit
-    const thirdAmountOut = await uniswapRouter.getAmountOut(firstAmountOut, updatedReserveB2, updatedReserveA2); // b -> a because we're swapping back
+    const thirdAmountOut = await uniswapRouter.getAmountOut(firstAmountOut, reserveB, reserveA); // b -> a because we're swapping back
 
     const profit = thirdAmountOut.sub(buyAmount);
     console.log(`Profit: ${ethers.utils.formatEther(profit)} ETH`);
 
-    if (profit.lt(0)) return console.log('Profit too low');
+    if (profit.lt(0)) return console.log('Transaction is not profitable');
+    if (true) return;
 
     // 8. Prepare first transaction
     const deadline = Math.floor(Date.now() / 1000) + 60 * 60; // 1 hour from now
