@@ -5,7 +5,7 @@
 require('dotenv').config();
 const { Wallet, ethers } = require('ethers');
 const { FlashbotsBundleProvider, FlashbotsBundleResolution } = require('@flashbots/ethers-provider-bundle');
-const { getPairAddress, getAmountOut } = require('./utils');
+const { getPairAddress, getAmountOut, findOptimalBuyAmount } = require('./utils');
 
 
 // 1.1 Setup config
@@ -39,7 +39,7 @@ let factoryAddress;
 const decodeUniversalRouterSwap = input => {
   const abiCoder = new ethers.utils.AbiCoder();
   const decodedParameters = abiCoder.decode(['address', 'uint256', 'uint256', 'bytes', 'bool'], input);
-  const breakdown = input.substring(2).match(/.{1,64}/g); // TODO maybe faster way without regex?
+  const breakdown = input.substring(2).match(/.{1,64}/g);
 
   let path = [];
   if (breakdown.length != 9) {
@@ -132,18 +132,11 @@ const processTransaction = async tx => {
     reserveB = reserves._reserve0;
   }
 
-  // Calculate the difference between the current price and the minimum price (effectivley slippage)
-  const amtVictimWouldGet = getAmountOut(amountIn, reserveA, reserveB);
-  const diff = amtVictimWouldGet.sub(minAmountOut);
-  const maxSlippage = diff.mul(100).div(minAmountOut);
-  if (maxSlippage.lte(0)) return false; // 0 slippage
-  console.log(`MEV: ${maxSlippage}%`);
+  // Find the optimal buyAmount without moving price too much
+  const buyAmount = findOptimalBuyAmount(amountIn, reserveA, reserveB, minAmountOut, config.maxBuyAmount);
+  console.log(`Optimal buy amount: ${ethers.utils.formatEther(buyAmount)} ETH`);
 
-  // 6. Get fee costs for simplicity we'll add the user's gas fee
-  const maxGasFee = transaction.maxFeePerGas ? transaction.maxFeePerGas.add(bribeToMiners) : bribeToMiners;
-  const priorityFee = transaction.maxPriorityFeePerGas ? transaction.maxPriorityFeePerGas.add(bribeToMiners) : bribeToMiners;
-
-  // 7. Buy using your amount in and calculate amount out
+  // 6. Buy using your amount in and calculate amount out
   const ourAmountTokens = getAmountOut(buyAmount, reserveA, reserveB);
   reserveA = reserveA.add(buyAmount);
   reserveB = reserveB.sub(ourAmountTokens);
@@ -158,10 +151,14 @@ const processTransaction = async tx => {
   // How much ETH we get at the end with a potential profit
   const wethOut = getAmountOut(ourAmountTokens, reserveB, reserveA); // b -> a because we're swapping back
   const profit = wethOut.sub(buyAmount);
-  console.log(`Profit: ${ethers.utils.formatEther(profit)} ETH`);
+  console.log(`Profit: ${ethers.utils.formatEther(profit)} ETH (${profit.mul(100).div(buyAmount)}%)`);
 
   if (profit.lte(0)) return console.log('Transaction is not profitable');
   if (true) return;
+
+  // 7. Get fee costs for simplicity we'll add the user's gas fee
+  const maxGasFee = transaction.maxFeePerGas ? transaction.maxFeePerGas.add(bribeToMiners) : bribeToMiners;
+  const priorityFee = transaction.maxPriorityFeePerGas ? transaction.maxPriorityFeePerGas.add(bribeToMiners) : bribeToMiners;
 
   // 8. Prepare first transaction
   const deadline = Math.floor(Date.now() / 1000) + 60 * 60; // 1 hour from now
@@ -176,7 +173,7 @@ const processTransaction = async tx => {
         {
           value: buyAmount,
           type: 2,
-          maxFeePerGas: maxGasFee,
+          maxFeePerGas: maxGasFee, // TODO only last transaction uses the bribe
           maxPriorityFeePerGas: priorityFee,
           gasLimit: config.gasLimit,
         }

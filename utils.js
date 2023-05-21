@@ -3,7 +3,7 @@ const path = require('path');
 const { bytecode } = require('@uniswap/v2-core/build/UniswapV2Pair.json');
 const { keccak256, pack } = require('@ethersproject/solidity');
 const { getCreate2Address } = require('@ethersproject/address');
-const { BigNumber } = require('ethers');
+const { ethers, BigNumber } = require('ethers');
 
 const network = process.argv[2] || 'goerli';
 const INIT_CODE_HASH = keccak256(['bytes'], [`0x${bytecode}`]);
@@ -42,9 +42,33 @@ const getAmountOut = (amountIn, reserveIn, reserveOut) => {
   return numerator.div(denominator);
 }
 
+// Binary search to find the optimal buy amount without moving the price too much
+const findOptimalBuyAmount = (amountIn, reserveA, reserveB, minAmountOut, maxBuyAmount) => {
+  let left = ethers.constants.Zero;
+  let right = maxBuyAmount;
+
+  while (left.lt(right)) {
+    const mid = left.add(right).div(ethers.constants.Two); // Calculate the middle point
+
+    const ourAmountTokens = getAmountOut(mid, reserveA, reserveB);
+    const updatedReserveA = reserveA.add(mid);
+    const updatedReserveB = reserveB.sub(ourAmountTokens);
+    const victimAmountTokens = getAmountOut(amountIn, updatedReserveA, updatedReserveB);
+
+    if (victimAmountTokens.lt(minAmountOut)) {
+      right = mid.sub(ethers.constants.One); // Adjust the right boundary
+    } else {
+      left = mid.add(ethers.constants.One); // Adjust the left boundary
+    }
+  }
+
+  return right.sub(right.div(300)); // Sub 0.3% for slippage
+}
+
 
 module.exports = {
   sortAddresses,
   getPairAddress,
   getAmountOut,
+  findOptimalBuyAmount,
 };

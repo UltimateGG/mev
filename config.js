@@ -2,7 +2,7 @@ const { ethers } = require('ethers');
 
 
 const config = {
-  maxBuyAmount: ethers.utils.parseUnits('0.1', 'ether'),
+  maxBuyAmount: ethers.utils.parseUnits('1.0', 'ether'),
   gasLimit: 300_000,
 
   networks: {
