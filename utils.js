@@ -35,10 +35,13 @@ const getPairAddress = (factoryAddress, token1, token2) => {
   return addr;
 }
 
+const FEE = BigNumber.from(997);
+const ONE_THOUSAND = BigNumber.from(1000);
+
 const getAmountOut = (amountIn, reserveIn, reserveOut) => {
-  const amountInWithFee = amountIn.mul(997);
+  const amountInWithFee = amountIn.mul(FEE);
   const numerator = amountInWithFee.mul(reserveOut);
-  const denominator = reserveIn.mul(1000).add(amountInWithFee);
+  const denominator = reserveIn.mul(ONE_THOUSAND).add(amountInWithFee);
   return numerator.div(denominator);
 }
 

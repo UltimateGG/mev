@@ -67,7 +67,7 @@ const initialChecks = async tx => {
     return false;
   }
 
-  if (!transaction || !transaction.to || Number(transaction.value) == 0) return false;
+  if (!transaction || !transaction.to || transaction.value.isZero()) return false;
   if (transaction.to.toLowerCase() !== networkSettings.universalRouter.toLowerCase()) return false;
 
   try {
@@ -134,6 +134,7 @@ const processTransaction = async tx => {
 
   // Find the optimal buyAmount without moving price too much
   const buyAmount = findOptimalBuyAmount(amountIn, reserveA, reserveB, minAmountOut, config.maxBuyAmount);
+  if (buyAmount.lt(ethers.constants.Zero)) return false;
   console.log(`Optimal buy amount: ${ethers.utils.formatEther(buyAmount)} ETH`);
 
   // 6. Buy using your amount in and calculate amount out
@@ -151,9 +152,9 @@ const processTransaction = async tx => {
   // How much ETH we get at the end with a potential profit
   const wethOut = getAmountOut(ourAmountTokens, reserveB, reserveA); // b -> a because we're swapping back
   const profit = wethOut.sub(buyAmount);
-  console.log(`Profit: ${ethers.utils.formatEther(profit)} ETH (${profit.mul(100).div(buyAmount)}%)`);
+  console.log(`Profit: ${ethers.utils.formatEther(profit)} ETH (${profit.mul(100).div(buyAmount)}%)`); // TODO calculate gas costs
 
-  if (profit.lte(0)) return console.log('Transaction is not profitable');
+  if (profit.lte(ethers.constants.Zero)) return console.log('Transaction is not profitable');
   if (true) return;
 
   // 7. Get fee costs for simplicity we'll add the user's gas fee
@@ -308,3 +309,4 @@ start();
 // - Calculate the transaction array for type 0 and type 2 transactions
 // - Implement multiple dexes like uniswap, shibaswap, sushiswap and others
 // - Calculate optimal buy amount
+// - Better logging system and clean logs
