@@ -134,7 +134,7 @@ const processTransaction = async tx => {
 
   // Find the optimal buyAmount without moving price too much
   const buyAmount = findOptimalBuyAmount(amountIn, reserveA, reserveB, minAmountOut, config.maxBuyAmount);
-  if (buyAmount.lt(ethers.constants.Zero)) return false;
+  if (buyAmount.lte(ethers.constants.Zero)) return false;
   console.log(`Optimal buy amount: ${ethers.utils.formatEther(buyAmount)} ETH`);
 
   // 6. Buy using your amount in and calculate amount out
@@ -155,12 +155,12 @@ const processTransaction = async tx => {
   console.log(`Profit: ${ethers.utils.formatEther(profit)} ETH (${profit.mul(100).div(buyAmount)}%)`); // TODO calculate gas costs
 
   if (profit.lte(ethers.constants.Zero)) return console.log('Transaction is not profitable');
-  if (true) return;
 
   // 7. Get fee costs for simplicity we'll add the user's gas fee
   const maxGasFee = transaction.maxFeePerGas ? transaction.maxFeePerGas.add(bribeToMiners) : bribeToMiners;
   const priorityFee = transaction.maxPriorityFeePerGas ? transaction.maxPriorityFeePerGas.add(bribeToMiners) : bribeToMiners;
 
+  // TODO parallelize these
   // 8. Prepare first transaction
   const deadline = Math.floor(Date.now() / 1000) + 60 * 60; // 1 hour from now
   let firstTransaction = {
