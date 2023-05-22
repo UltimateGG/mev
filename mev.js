@@ -101,7 +101,7 @@ const initialChecks = async tx => {
 // 4. Process transaction
 const processTransaction = async tx => {
   const checksPassed = await initialChecks(tx);
-  if (!checksPassed) return false;
+  if (!checksPassed) return;
   const {
     transaction,
     amountIn, // Victim's ETH
@@ -119,7 +119,7 @@ const processTransaction = async tx => {
   try {
     reserves = await pair.getReserves();
   } catch (e) {
-    return false;
+    return;
   }
 
   let reserveA;
@@ -134,7 +134,7 @@ const processTransaction = async tx => {
 
   // Find the optimal buyAmount without moving price too much
   const buyAmount = findOptimalBuyAmount(amountIn, reserveA, reserveB, minAmountOut, config.maxBuyAmount);
-  if (buyAmount.lte(ethers.constants.Zero)) return false;
+  if (buyAmount.lte(ethers.constants.Zero)) return;
   console.log(`Optimal buy amount: ${ethers.utils.formatEther(buyAmount)} ETH`);
 
   // 6. Buy using your amount in and calculate amount out
@@ -277,9 +277,7 @@ const processTransaction = async tx => {
           bundleStats: await flashbotsProvider.getBundleStats(bundleSubmission.bundleHash, blockNumber),
           userStats: await flashbotsProvider.getUserStats(),
         });
-      } catch (e) {
-        return false;
-      }
+      } catch (e) {}
     }
   });
 }
