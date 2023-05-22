@@ -33,6 +33,7 @@ let flashbotsProvider;
 let wethAddress;
 let wethBigNumber;
 let factoryAddress;
+let blockNumber;
 
 
 // 2. Decode uniswap universal router transactions
@@ -167,7 +168,7 @@ const processTransaction = async tx => {
     signer: signingWallet,
     transaction: {
       ...await uniswapRouter.populateTransaction.swapExactETHForTokens(
-        ourAmountTokens,
+        ourAmountTokens, // amountOutMin
         [wethAddress, tokenToCapture],
         signingWallet.address,
         deadline,
@@ -244,10 +245,9 @@ const processTransaction = async tx => {
     thirdTransaction,
     fourthTransaction,
   ]);
-  const blockNumber = await provider.getBlockNumber() + 1; // TODO maybe subscribe and create global variable
   console.log('Simulating...');
 
-  const simulation = await flashbotsProvider.simulate(signedTransactions, blockNumber);
+  const simulation = await flashbotsProvider.simulate(signedTransactions, blockNumber + 1);
   if (simulation.firstRevert || simulation.error) {
     return console.log('Simulation error', simulation.firstRevert || simulation.error);
   } else {
@@ -256,7 +256,7 @@ const processTransaction = async tx => {
 
   // 12. Send transactions with flashbots
   let bundleSubmission;
-  flashbotsProvider.sendRawBundle(signedTransactions, blockNumber).then(_bundleSubmission => {
+  flashbotsProvider.sendRawBundle(signedTransactions, blockNumber + 1).then(_bundleSubmission => {
     bundleSubmission = _bundleSubmission;
     console.log('Bundle submitted', bundleSubmission.bundleHash);
     return bundleSubmission.wait();
@@ -274,7 +274,7 @@ const processTransaction = async tx => {
       console.log('Bundle hash', bundleSubmission.bundleHash);
       try {
         console.log({
-          bundleStats: await flashbotsProvider.getBundleStats(bundleSubmission.bundleHash, blockNumber),
+          bundleStats: await flashbotsProvider.getBundleStats(bundleSubmission.bundleHash, blockNumber + 1),
           userStats: await flashbotsProvider.getUserStats(),
         });
       } catch (e) {}
@@ -287,11 +287,16 @@ const start = async () => {
   wethAddress = await uniswapRouter.WETH();
   wethBigNumber = ethers.BigNumber.from(wethAddress);
   factoryAddress = await uniswapRouter.factory();
+  blockNumber = await provider.getBlockNumber();
 
   console.log('Listening for transactions on the chain id', networkSettings.chainId);
   wsProvider.on('pending', tx => {
     // console.log('tx', tx);
     processTransaction(tx);
+  });
+
+  wsProvider.on('block', num => {
+    blockNumber = num;
   });
 }
 
@@ -306,5 +311,4 @@ start();
 // - Use multiple cores from your computer to improve performance
 // - Calculate the transaction array for type 0 and type 2 transactions
 // - Implement multiple dexes like uniswap, shibaswap, sushiswap and others
-// - Calculate optimal buy amount
 // - Better logging system and clean logs
